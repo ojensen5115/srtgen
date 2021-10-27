@@ -1,0 +1,1 @@
+Hello, and welcome to the security reviewer training. The purpose of this module is to teach you things you don't already know. It's very important, and you should pay attention.
