@@ -33,18 +33,18 @@ def format_timestamp(timestamp):
 nltk.download('punkt', quiet=True)
 
 # parse the script into sentences
-with open('srt.txt') as file:
+with open('sample_script.txt') as file:
     text = file.read()
 sentences = nltk.sent_tokenize(text)
 
 # initialize speech recognition
 r = sr.Recognizer()
-with sr.AudioFile('sample.wav') as file:
+with sr.AudioFile('sample_audio.wav') as file:
     audio_data = r.record(file)
     decoder = r.recognize_sphinx(audio_data, show_all=True)
     segments = [(seg.word.split('(')[0], seg.start_frame/audio_frame_rate) for seg in decoder.seg()]
-    for s in segments:
-        print(s)
+    #for s in segments:
+    #    print(s)
 
 # match script against audio
 annotated_sentences = []
@@ -64,7 +64,7 @@ for sentence in sentences:
             if word == segments[idx][0] or (word == None and (segments[idx][0] == '<sil>' or segments[idx][0] == '</s>')):
                 #print("        {} at {}".format(word, segments[idx][1]))
                 timestamps.append(segments[idx][1])
-                if (word != '<sil>'):
+                if (word is not None):
                     segment_idx = idx + 1
                     segment_backlog = 0
                 break
