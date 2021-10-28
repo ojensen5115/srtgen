@@ -1,3 +1,5 @@
+import sys
+
 import nltk
 import speech_recognition
 
@@ -46,17 +48,16 @@ def get_sentences(filename):
     return sentences
 
 
-def get_recognized_words(filename):
+def get_recognized_words(filename, audio_frame_rate):
     r = speech_recognition.Recognizer()
     with speech_recognition.WavFile(filename) as source:
-        audio_frame_rate = 1/93 # why???
-        #print("sra: {}".format(source.SAMPLE_RATE))
-        #print("frc: {}".format(source.FRAME_COUNT))
-        #print("dur: {}".format(source.DURATION))
-        #print("fra: {}".format(audio_frame_rate))
+        print("Duration:         {}s".format(source.DURATION))
+        print("Sample rate:      {}/s".format(source.SAMPLE_RATE))
+        print("Frame count:      {}".format(source.FRAME_COUNT))
+        print("")
         audio_data = r.record(source)
     decoder = r.recognize_sphinx(audio_data, show_all=True)
-    segments = [(seg.word.split('(')[0], seg.start_frame * audio_frame_rate) for seg in decoder.seg()][1:-1]
+    segments = [(seg.word.split('(')[0], seg.start_frame / audio_frame_rate) for seg in decoder.seg()][1:]
     return segments
 
 
@@ -110,29 +111,53 @@ def map_alignment(sentences, segments, alignment):
     return sentences
 
 
-def print_srt(sentences):
+def print_srt(sentences, offset=0):
     for idx, sentence in enumerate(sentences):
         if len(sentence['segments']) < 2:
             continue
-        start_time = sentence['segments'][0][1][1]
-        end_time = sentence['segments'][-1][1][1]
+        start_time = sentence['segments'][0][1][1] + offset
+        end_time = sentence['segments'][-1][1][1] + offset
         print(idx + 1)
         print('{} --> {}'.format(format_timestamp(start_time), format_timestamp(end_time)))
         print(sentence['text'])
         print('')
 
+def usage():
+    print("\nUsage:")
+    print("  python srtgen.py script.txt audio.wav [offset=0] [framerate=100]")
+    print("")
+    print("You can use the optional offset and framerate arguments to tune the result. "
+          "Supply an offset to push all subtitles off by that many seconds. "
+          "Supply a framerate to change the number of frames per second in your wav file.")
+    print("")
+    print("I'd sure love to calculate these values automatically, but :shrug:")
+    print("")
+    print("Examples:")
+    print("    python srtgen.py samples/1.txt samples/1.wav 0 93 > samples/1.srt")
+    print("    python srtgen.py samples/2.txt samples/2.wav 1.4 95 > samples/2.srt\n")
 
+def main(args):
+    if len(args) < 2:
+        return usage()
+    script_path = args[0]
+    audio_path = args[1]
 
+    subtitle_offset = 0
+    audio_frame_rate = 100
+    try:
+        subtitle_offset = float(args[2])
+        audio_frame_rate = float(args[3])
+    except:
+        pass
 
-def main():
-    script_path = 'samples/1.txt'
-    audio_path = 'samples/1.wav'
+    print("Audio frame rate: {}/s".format(audio_frame_rate))
+    print("Subtitle offset:  {}s".format(subtitle_offset))
 
     # get a list of sentences, and annotate them
     sentences = get_sentences(script_path)
 
     # get a list of recognized words, and their timestamps
-    segments = get_recognized_words(audio_path)
+    segments = get_recognized_words(audio_path, audio_frame_rate)
 
     # build out a flat ordered list of words for both the script and audio
     audio_words = [x[0] for x in segments]
@@ -147,7 +172,8 @@ def main():
     sentences = map_alignment(sentences, segments, alignment)
 
     # output the sentences in SRT format
-    print_srt(sentences)
+    print_srt(sentences, subtitle_offset)
 
 
-main()
+if __name__ == "__main__":
+   main(sys.argv[1:])
