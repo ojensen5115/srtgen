@@ -8,9 +8,7 @@ from nltk.tokenize import RegexpTokenizer
 
 
 tokenizer = RegexpTokenizer("[\w']+")
-
-audio_frame_rate = 100
-
+nltk.download('punkt', quiet=True)
 
 
 def format_timestamp(timestamp):
@@ -29,8 +27,6 @@ def format_timestamp(timestamp):
     return "{:02d}:{:02d}:{:02d},{:03d}".format(hours, mins, seconds, milliseconds)
 
 
-# initialize necessary ntlk resources
-nltk.download('punkt', quiet=True)
 
 def get_sentences(filename):
     with open(filename, 'r') as file:
@@ -52,10 +48,15 @@ def get_sentences(filename):
 
 def get_recognized_words(filename):
     r = speech_recognition.Recognizer()
-    with speech_recognition.AudioFile(filename) as file:
-        audio_data = r.record(file)
-        decoder = r.recognize_sphinx(audio_data, show_all=True)
-        segments = [(seg.word.split('(')[0], seg.start_frame/audio_frame_rate) for seg in decoder.seg()][1:-1]
+    with speech_recognition.WavFile(filename) as source:
+        audio_frame_rate = 1/93 # why???
+        #print("sra: {}".format(source.SAMPLE_RATE))
+        #print("frc: {}".format(source.FRAME_COUNT))
+        #print("dur: {}".format(source.DURATION))
+        #print("fra: {}".format(audio_frame_rate))
+        audio_data = r.record(source)
+    decoder = r.recognize_sphinx(audio_data, show_all=True)
+    segments = [(seg.word.split('(')[0], seg.start_frame * audio_frame_rate) for seg in decoder.seg()][1:-1]
     return segments
 
 
