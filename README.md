@@ -9,3 +9,4 @@ System Dependencies:
 * python (obviously)
 * swig
 * the stuff in the Pipfile
+* annotate doesn't install its deps correctly, so also `six` and `numpy`
