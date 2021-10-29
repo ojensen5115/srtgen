@@ -1,3 +1,7 @@
+import hashlib
+import pathlib
+import pickle
+import re
 import sys
 
 import nltk
@@ -32,14 +36,20 @@ def format_timestamp(timestamp):
 
 def get_sentences(filename):
     with open(filename, 'r') as file:
-        text = file.read().replace('\n', ' ')
+        text = file.read()
     text_sentences = nltk.sent_tokenize(text)
+    # introduce additional splits on newlines
+    text_segments = []
+    for sentence in text_sentences:
+        parts = re.split("\n+", sentence)
+        for part in parts:
+            text_segments.append(part.strip())
+
     sentences = []
     script_words = []
-    for sentence in text_sentences:
+    for sentence in text_segments:
         words = tokenizer.tokenize(sentence)
         lower_words = [x.lower() for x in words]
-        lower_words.append('<sil>')
         sentences.append({
             "text": sentence,
             "words": lower_words,
@@ -48,16 +58,30 @@ def get_sentences(filename):
     return sentences
 
 
-def get_recognized_words(filename, audio_frame_rate):
-    r = speech_recognition.Recognizer()
-    with speech_recognition.WavFile(filename) as source:
-        print("Duration:         {}s".format(source.DURATION))
-        print("Sample rate:      {}/s".format(source.SAMPLE_RATE))
-        print("Frame count:      {}".format(source.FRAME_COUNT))
-        print("")
-        audio_data = r.record(source)
-    decoder = r.recognize_sphinx(audio_data, show_all=True)
-    segments = [(seg.word.split('(')[0], seg.start_frame / audio_frame_rate) for seg in decoder.seg()][1:]
+def get_recognized_words(filename):
+    with open(filename, 'rb') as f:
+        digest = hashlib.sha256(f.read()).hexdigest()[:8]
+    pickle_filename = "{}-{}.pickle".format(pathlib.Path(filename).stem, digest)
+
+    try:
+        # check for pickled instance of speech recognition
+        with open(pickle_filename, 'rb') as p:
+            segments = pickle.load(p)
+    except FileNotFoundError:
+        # perform speech recognition
+        r = speech_recognition.Recognizer()
+        with speech_recognition.WavFile(filename) as source:
+            print("Duration:         {}s".format(source.DURATION))
+            print("Sample rate:      {}/s".format(source.SAMPLE_RATE))
+            print("Frame count:      {}".format(source.FRAME_COUNT))
+            print("")
+            audio_data = r.record(source)
+        decoder = r.recognize_sphinx(audio_data, show_all=True)
+        segments = [(seg.word.split('(')[0], seg.start_frame, seg.end_frame) for seg in decoder.seg()][1:]
+        # pickle it for next time
+        with open(pickle_filename, 'wb') as p:
+            pickle.dump(segments, p)
+
     return segments
 
 
@@ -70,6 +94,7 @@ def align_wordlists(wordlist_1, wordlist_2):
     scoring = SimpleScoring(2, -1)
     aligner = GlobalSequenceAligner(scoring, -2)
     score, encoded_sequences = aligner.align(encoded_script_sequence, encoded_audio_sequence, backtrace=True)
+    #import pdb; pdb.set_trace()
     selected_encoded_sequences = encoded_sequences[0]
     alignment = vocab.decodeSequenceAlignment(selected_encoded_sequences)
     return alignment
@@ -81,7 +106,7 @@ def map_alignment(sentences, segments, alignment):
     alignment_idx = 0
 
     for align in alignment:
-        #print("processing {}".format(align))
+        #print("processing {} --- {} {} {} {} ".format(align, word_idx, sentence_idx, segment_idx, alignment_idx))
         annotated_segment = [align[0], None]
         if align[1] != '-':
             # segment exists, so we consume it
@@ -115,8 +140,17 @@ def print_srt(sentences, offset=0):
     for idx, sentence in enumerate(sentences):
         if len(sentence['segments']) < 2:
             continue
-        start_time = sentence['segments'][0][1][1] + offset
-        end_time = sentence['segments'][-1][1][1] + offset
+        #import pdb;pdb.set_trace()
+        # get the start time of the first found segment
+        for segment in sentence['segments']:
+            if segment[1]:
+                start_time = segment[1][1] + offset
+                break
+        # get the end time of the last found segment
+        for segment in sentence['segments'][::-1]:
+            if segment[1]:
+                end_time = segment[1][2] + offset
+                break
         print(idx + 1)
         print('{} --> {}'.format(format_timestamp(start_time), format_timestamp(end_time)))
         print(sentence['text'])
@@ -157,7 +191,8 @@ def main(args):
     sentences = get_sentences(script_path)
 
     # get a list of recognized words, and their timestamps
-    segments = get_recognized_words(audio_path, audio_frame_rate)
+    segments = get_recognized_words(audio_path)
+    segments = [s for s in segments if s[0] != '<sil>']
 
     # build out a flat ordered list of words for both the script and audio
     audio_words = [x[0] for x in segments]
@@ -172,6 +207,7 @@ def main(args):
     sentences = map_alignment(sentences, segments, alignment)
 
     # output the sentences in SRT format
+    print("")
     print_srt(sentences, subtitle_offset)
 
 
