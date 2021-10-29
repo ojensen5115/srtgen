@@ -81,7 +81,6 @@ def get_recognized_words(filename):
         # pickle it for next time
         with open(pickle_filename, 'wb') as p:
             pickle.dump(segments, p)
-
     return segments
 
 
@@ -136,7 +135,7 @@ def map_alignment(sentences, segments, alignment):
     return sentences
 
 
-def print_srt(sentences, offset=0):
+def print_srt(sentences, offset=0, frame_rate=100):
     for idx, sentence in enumerate(sentences):
         if len(sentence['segments']) < 2:
             continue
@@ -152,7 +151,7 @@ def print_srt(sentences, offset=0):
                 end_time = segment[1][2] + offset
                 break
         print(idx + 1)
-        print('{} --> {}'.format(format_timestamp(start_time), format_timestamp(end_time)))
+        print('{} --> {}'.format(format_timestamp(offset + start_time/frame_rate), format_timestamp(offset + end_time/frame_rate)))
         print(sentence['text'])
         print('')
 
@@ -208,7 +207,7 @@ def main(args):
 
     # output the sentences in SRT format
     print("")
-    print_srt(sentences, subtitle_offset)
+    print_srt(sentences, subtitle_offset, audio_frame_rate)
 
 
 if __name__ == "__main__":

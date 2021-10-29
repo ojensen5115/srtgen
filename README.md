@@ -18,6 +18,7 @@ Some examples (on the sample files):
 ```
 python srtgen.py samples/1.txt samples/1.wav 0 93 > samples/1.srt
 python srtgen.py samples/2.txt samples/2.wav 1.4 95 > samples/2.srt
+python srtgen.py samples/buffalo.txt samples/buffalo.wav 2 95 > samples/buffalo.srt
 ```
 
 ## Dependencies
