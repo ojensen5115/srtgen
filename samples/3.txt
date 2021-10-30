@@ -1,0 +1,26 @@
+Hi.
+
+My name is Oliver.
+I wrote this script because I have a number of long videos that I narrate,
+and for which captions have been requested.
+These videos are several hours long, and while I have a script for them,
+sitting there and typing millisecond timestamps for every line spoken sounds terrible.
+So, I wrote this program instead.
+
+It works by doing speech-to-text recognition on the audio --
+and this is terrible by the way --
+but it then tries to match the detected words up with the words in the original script, giving you a decent set of captions.
+
+Initially, I used a package called "python-alignment" to perform this matching.
+It uses the Needleman-Wunsch algorithm, and was generally pretty cool.
+However, for sequences of any non-trivial length, it would explode in a puff of recusion errors.
+It has also been unmaintained for upwards of five years.
+
+The current version of this script uses the Ratcliff-Obershelp algorithm instead,
+which is built into difflib.
+The main difference is that while Needleman-Wunsch optimizes for general global alignment,
+Ratcliff-Obershelp optimizes for minimal visual difference.
+To be honest I'd rather use Needleman-Wunsch, but there doesn't seem to be a flexible implementation of it that works well in python.
+And with a bit of data massaging, the Ratcliff-Obershelp algorithm seems to work well enough.
+
+I hope you find this script useful!
