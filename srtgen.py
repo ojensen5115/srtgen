@@ -1,3 +1,4 @@
+import difflib
 import hashlib
 import pathlib
 import pickle
@@ -7,9 +8,6 @@ import sys
 import nltk
 import speech_recognition
 
-from alignment.sequence import Sequence
-from alignment.vocabulary import Vocabulary
-from alignment.sequencealigner import SimpleScoring, GlobalSequenceAligner
 from nltk.tokenize import RegexpTokenizer
 
 
@@ -84,74 +82,145 @@ def get_recognized_words(filename):
     return segments
 
 
-def align_wordlists(wordlist_1, wordlist_2):
-    script_sequence = Sequence(wordlist_1)
-    audio_sequence = Sequence(wordlist_2)
-    vocab = Vocabulary()
-    encoded_script_sequence = vocab.encodeSequence(script_sequence)
-    encoded_audio_sequence = vocab.encodeSequence(audio_sequence)
-    scoring = SimpleScoring(2, -1)
-    aligner = GlobalSequenceAligner(scoring, -2)
-    score, encoded_sequences = aligner.align(encoded_script_sequence, encoded_audio_sequence, backtrace=True)
-    #import pdb; pdb.set_trace()
-    selected_encoded_sequences = encoded_sequences[0]
-    alignment = vocab.decodeSequenceAlignment(selected_encoded_sequences)
-    return alignment
+def align_segments(sentences, segments):
+    # build out a flat ordered list of words for both the script and audio so we can match them
+    audio_words = [x[0] for x in segments]
+    script_words = []
+    for sentence in sentences:
+        script_words += sentence['words']
+    '''
+    for idx, word in enumerate(script_words):
+        print("{}: {}".format(idx, word))
+    for idx, segment in enumerate(segments):
+        print("{}: {}".format(idx, segment))
+    '''
+    # get matching blocks
+    matcher = difflib.SequenceMatcher(isjunk=None, a=script_words, b=audio_words, autojunk=False)
+    blocks = matcher.get_matching_blocks()
+    #print(blocks)
 
-def map_alignment(sentences, segments, alignment):
+    # map segments to sentence words
+    script_idx = 0
+    block_idx = 0
     word_idx = 0
     sentence_idx = 0
-    segment_idx = 0
-    alignment_idx = 0
+    sentence = sentences[sentence_idx]
+    for block in blocks:
+        block_script_idx = block[0]
+        block_segment_idx = block[1]
+        block_length = block[2]
 
-    for align in alignment:
-        #print("processing {} --- {} {} {} {} ".format(align, word_idx, sentence_idx, segment_idx, alignment_idx))
-        annotated_segment = [align[0], None]
-        if align[1] != '-':
-            # segment exists, so we consume it
-            if align[1] != segments[segment_idx][0]:
-                # if alignment works how I think it does, this should be impossible
-                print("SEGMENT MISMATCH! {} != {}".format(align[1], segments[segment_idx][0]))
-            annotated_segment[1] = segments[segment_idx]
-            #print("    consumed segment: {}".format(segments[segment_idx]))
-            segment_idx += 1
-        # at this point, annotated_segment is {script_word: segment_if_any} and we've consumed the segment
-        if align[0] != '-':
-            # script word exists, so we consume it
-            if align[0] != sentences[sentence_idx]['words'][word_idx]:
-                # if alignment works how I think it does, this should also be impossible
-                print("SCRIPT WORD MISMATCH! {} != {}".format(align[0], sentences[sentence_idx]['words'][word_idx]))
-            #print("    consumed word: {}".format(sentences[sentence_idx]['words'][word_idx]))
+        #print(block)
+
+        # catch up on non-matching area
+        #print("{} vs {}".format(block_script_idx, script_idx))
+        if block_script_idx > script_idx:
+            for idx in range(script_idx, block_script_idx):
+                #print("filling in {}".format(script_words[idx]))
+                sentence['segments'].append([script_words[idx], None, None])
+                script_idx += 1
+                word_idx += 1
+                if word_idx >= len(sentence['words']):
+                    sentence_idx += 1
+                    try:
+                        sentence = sentences[sentence_idx]
+                    except:
+                        pass
+                    word_idx = 0
+                    #print("advancing sentence in fill to {}".format(sentence_idx))
+        # apply the match
+
+        for idx in range(0, block_length):
+            #print("matching {}".format(script_words[block_script_idx + idx]))
+            sentence['segments'].append((script_words[block_script_idx + idx], segments[block_segment_idx + idx], block_segment_idx + idx))
+            script_idx += 1
             word_idx += 1
-        # claim the segment for the active sentence
-        sentences[sentence_idx]['segments'].append(annotated_segment)
+            if word_idx >= len(sentence['words']):
+                sentence_idx += 1
+                try:
+                    sentence = sentences[sentence_idx]
+                except:
+                    pass
+                word_idx = 0
+                #print("advancing sentence in match to {}".format(sentence_idx))
 
-        # if we've consumed the last word in a sentence, advance to the next sentence
-        if word_idx == len(sentences[sentence_idx]['words']):
-            #print("        consumed sentence: {}".format(sentences[sentence_idx]['text']))
-            sentence_idx += 1
-            word_idx = 0
+    sentences = close_sentence_gaps(sentences, segments)
+    return sentences
+
+
+def close_sentence_gaps(sentences, segments):
+    # handle gaps
+    for idx, sentence in enumerate(sentences):
+        if idx == 0:
+            continue
+
+        last_sentence = sentences[idx - 1]
+        # how many gaps do we have at the end of the last sentence?
+        missing_end = 0
+        missing_start = 0
+        for segment in last_sentence['segments'][::-1]:
+            if segment[1] is not None:
+                last_claimed_segment = segment[2]
+                break
+            missing_end += 1
+        # how many gaps do we have at the start of this sentence?
+        for segment in sentence['segments']:
+            if segment[1] is not None:
+                first_claimed_segment = segment[2]
+                break
+            missing_start += 1
+
+        # fix it
+        unclaimed_segments = list(range(last_claimed_segment + 1, first_claimed_segment))
+        gap_size = missing_end + missing_start
+
+        if gap_size == 0:
+            continue
+
+        # determine ratio of segments to put on each side
+        distribution_ratio = missing_end / gap_size
+
+        if distribution_ratio == 0:
+            sentence['segments'][0][1] = segments[unclaimed_segments[0]]
+            sentence['segments'][0][2] = unclaimed_segments[0]
+        elif distribution_ratio == 1:
+            last_sentence['segments'][-1][1] = segments[unclaimed_segments[-1]]
+            last_sentence['segments'][-1][2] = unclaimed_segments[-1]
+        else:
+            last_sentence_segment = unclaimed_segments[round(distribution_ratio * len(unclaimed_segments))]
+            last_sentence['segments'][-1][1] = segments[last_sentence_segment]
+            last_sentence['segments'][-1][2] = last_sentence_segment
+            try:
+                first_sentence_segment = unclaimed_segments[last_sentence_segment + 1]
+                sentence['segments'][0][1] = segments[first_sentence_segment]
+                sentence['segments'][0][2] = first_sentence_segment
+            except:
+                # fails if the ratio is super close to 1
+                pass
 
     return sentences
 
 
-def print_srt(sentences, offset=0, frame_rate=100):
-    for idx, sentence in enumerate(sentences):
-        if len(sentence['segments']) < 2:
-            continue
-        #import pdb;pdb.set_trace()
+def print_srt(sentences, segments, offset=0, frame_rate=100):
+    for sentence_idx, sentence in enumerate(sentences):
+        late_start = 0
+        early_end = 0
         # get the start time of the first found segment
-        for segment in sentence['segments']:
+        for idx, segment in enumerate(sentence['segments']):
             if segment[1]:
                 start_time = segment[1][1] + offset
+                late_start = idx
                 break
         # get the end time of the last found segment
-        for segment in sentence['segments'][::-1]:
+        for idx, segment in enumerate(sentence['segments'][::-1]):
             if segment[1]:
                 end_time = segment[1][2] + offset
+                early_end = idx
                 break
-        print(idx + 1)
+        print(sentence_idx + 1)
         print('{} --> {}'.format(format_timestamp(offset + start_time/frame_rate), format_timestamp(offset + end_time/frame_rate)))
+        #if late_start or early_end:
+        #    print("{} :::: {}".format(late_start, early_end))
         print(sentence['text'])
         print('')
 
@@ -194,21 +263,11 @@ def main(args):
     segments = get_recognized_words(audio_path)
     segments = [s for s in segments if s[0] != '<sil>']
 
-    # build out a flat ordered list of words for both the script and audio
-    audio_words = [x[0] for x in segments]
-    script_words = []
-    for sentence in sentences:
-        script_words += sentence['words']
-
     # align those two lists of words
-    alignment = align_wordlists(script_words, audio_words)
-
-    # map the alignment back to the sentences and segments
-    sentences = map_alignment(sentences, segments, alignment)
+    sentences = align_segments(sentences, segments)
 
     # output the sentences in SRT format
-    print("")
-    print_srt(sentences, subtitle_offset, audio_frame_rate)
+    print_srt(sentences, segments, subtitle_offset, audio_frame_rate)
 
 
 if __name__ == "__main__":

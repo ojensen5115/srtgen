@@ -7,9 +7,6 @@ name = "pypi"
 speechrecognition = "*"
 nltk = "*"
 pocketsphinx = "*"
-alignment = "*"
-six = "*"
-numpy = "*"
 
 [dev-packages]
 
