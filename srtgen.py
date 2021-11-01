@@ -1,3 +1,4 @@
+import argparse
 import difflib
 import hashlib
 import pathlib
@@ -15,22 +16,19 @@ tokenizer = RegexpTokenizer("[\w']+")
 nltk.download('punkt', quiet=True)
 
 
+def eprint(*args, **kwargs):
+    print(*args, file=sys.stderr, **kwargs)
+
 def format_timestamp(timestamp):
     if not timestamp:
         return "???"
-
     seconds = int(timestamp)
     milliseconds = int(1000 * (timestamp - seconds))
-
     mins = seconds // 60
     seconds = seconds % 60
-
     hours = mins // 60
     mins = mins % 60
-
     return "{:02d}:{:02d}:{:02d},{:03d}".format(hours, mins, seconds, milliseconds)
-
-
 
 def get_sentences(filename):
     with open(filename, 'r') as file:
@@ -69,10 +67,6 @@ def get_recognized_words(filename):
         # perform speech recognition
         r = speech_recognition.Recognizer()
         with speech_recognition.WavFile(filename) as source:
-            #print("Duration:         {}s".format(source.DURATION))
-            #print("Sample rate:      {}/s".format(source.SAMPLE_RATE))
-            #print("Frame count:      {}".format(source.FRAME_COUNT))
-            #print("")
             audio_data = r.record(source)
         decoder = r.recognize_sphinx(audio_data, show_all=True)
         segments = [(seg.word.split('(')[0], seg.start_frame, seg.end_frame) for seg in decoder.seg()][1:]
@@ -88,16 +82,10 @@ def align_segments(sentences, segments):
     script_words = []
     for sentence in sentences:
         script_words += sentence['words']
-    '''
-    for idx, word in enumerate(script_words):
-        print("{}: {}".format(idx, word))
-    for idx, segment in enumerate(segments):
-        print("{}: {}".format(idx, segment))
-    '''
+
     # get matching blocks
     matcher = difflib.SequenceMatcher(isjunk=None, a=script_words, b=audio_words, autojunk=False)
     blocks = matcher.get_matching_blocks()
-    #print(blocks)
 
     # map segments to sentence words
     script_idx = 0
@@ -110,39 +98,33 @@ def align_segments(sentences, segments):
         block_segment_idx = block[1]
         block_length = block[2]
 
-        #print(block)
-
         # catch up on non-matching area
-        #print("{} vs {}".format(block_script_idx, script_idx))
         if block_script_idx > script_idx:
             for idx in range(script_idx, block_script_idx):
-                #print("filling in {}".format(script_words[idx]))
+                #eprint("Word '{}' in sentence {} not recognized, filling it in.".format(script_words[idx], sentence_idx + 1))
                 sentence['segments'].append([script_words[idx], None, None])
                 script_idx += 1
                 word_idx += 1
                 if word_idx >= len(sentence['words']):
+                    word_idx = 0
                     sentence_idx += 1
                     try:
                         sentence = sentences[sentence_idx]
                     except:
                         pass
-                    word_idx = 0
-                    #print("advancing sentence in fill to {}".format(sentence_idx))
-        # apply the match
 
+        # apply the match
         for idx in range(0, block_length):
-            #print("matching {}".format(script_words[block_script_idx + idx]))
             sentence['segments'].append((script_words[block_script_idx + idx], segments[block_segment_idx + idx], block_segment_idx + idx))
             script_idx += 1
             word_idx += 1
             if word_idx >= len(sentence['words']):
+                word_idx = 0
                 sentence_idx += 1
                 try:
                     sentence = sentences[sentence_idx]
                 except:
                     pass
-                word_idx = 0
-                #print("advancing sentence in match to {}".format(sentence_idx))
 
     sentences = close_sentence_gaps(sentences, segments)
     return sentences
@@ -163,6 +145,7 @@ def close_sentence_gaps(sentences, segments):
                 last_claimed_segment = segment[2]
                 break
             missing_end += 1
+
         # how many gaps do we have at the start of this sentence?
         for segment in sentence['segments']:
             if segment[1] is not None:
@@ -179,6 +162,8 @@ def close_sentence_gaps(sentences, segments):
 
         # determine ratio of segments to put on each side
         distribution_ratio = missing_end / gap_size
+        #eprint("Gap after sentence {}, with {}% of the words allocated before the break".format(
+        #    idx, round(distribution_ratio * 100)))
 
         if distribution_ratio == 0:
             sentence['segments'][0][1] = segments[unclaimed_segments[0]]
@@ -201,72 +186,75 @@ def close_sentence_gaps(sentences, segments):
     return sentences
 
 
-def print_srt(sentences, segments, offset=0, frame_rate=100):
+def print_srt(sentences, segments, subtitle_delay, audio_frame_rate):
+
+    if subtitle_delay is None:
+        subtitle_delay = 0
+    if audio_frame_rate is None:
+        audio_frame_rate = 100
+    eprint("")
+
+    print("Generated by srtgen.py -- https://github.com/ojensen5115/srtgen")
+    print("Audio frame rate: {}/s".format(audio_frame_rate))
+    print("Subtitle offset:  {}s".format(subtitle_delay))
+    print("")
+
     for sentence_idx, sentence in enumerate(sentences):
         late_start = 0
         early_end = 0
         # get the start time of the first found segment
         for idx, segment in enumerate(sentence['segments']):
             if segment[1]:
-                start_time = segment[1][1] + offset
+                start_time = segment[1][1] + subtitle_delay
                 late_start = idx
                 break
         # get the end time of the last found segment
         for idx, segment in enumerate(sentence['segments'][::-1]):
             if segment[1]:
-                end_time = segment[1][2] + offset
+                end_time = segment[1][2] + subtitle_delay
                 early_end = idx
                 break
+        if late_start:
+            eprint("Sentence {} has a late start of {} words".format(sentence_idx + 1, late_start))
+        if early_end:
+            eprint("Sentence {} has an early end of {} words".format(sentence_idx + 1, early_end))
+
         print(sentence_idx + 1)
-        print('{} --> {}'.format(format_timestamp(offset + start_time/frame_rate), format_timestamp(offset + end_time/frame_rate)))
-        #if late_start or early_end:
-        #    print("{} :::: {}".format(late_start, early_end))
+        print('{} --> {}'.format(format_timestamp(subtitle_delay + start_time/audio_frame_rate), format_timestamp(subtitle_delay + end_time/audio_frame_rate)))
         print(sentence['text'])
         print('')
 
-def usage():
-    print("\nUsage:")
-    print("  python srtgen.py script.txt audio.wav [offset=0] [framerate=100]")
-    print("")
-    print("You can use the optional offset and framerate arguments to tune the result. "
-          "Supply an offset to push all subtitles off by that many seconds. "
-          "Supply a framerate to change the number of frames per second in your wav file.")
-    print("")
-    print("I'd sure love to calculate these values automatically, but :shrug:")
-    print("")
-    print("Examples:")
-    print("    python srtgen.py samples/1.txt samples/1.wav 0 93 > samples/1.srt")
-    print("    python srtgen.py samples/2.txt samples/2.wav 1.4 95 > samples/2.srt\n")
 
 def main(args):
-    if len(args) < 2:
-        return usage()
-    script_path = args[0]
-    audio_path = args[1]
 
-    subtitle_offset = 0
-    audio_frame_rate = 100
-    try:
-        subtitle_offset = float(args[2])
-        audio_frame_rate = float(args[3])
-    except:
-        pass
+    parser = argparse.ArgumentParser(
+        description="Match an audio stream with its text to produce a SRT file.",
+        usage="python srtgen.py -t samples/1.txt -a samples/1.wav > output.srt")
+    parser.add_argument("-t",
+        dest="text_path", nargs=1, type=pathlib.Path, required=True,
+        help="The text file to use as the source of captions. Captions are separated by sentences and newlines.")
+    parser.add_argument("-a",
+        dest="audio_path", nargs=1, type=pathlib.Path, required=True,
+        help="The audio file to use to determine caption timestamps.")
+    parser.add_argument("-f",
+        dest="audio_frame_rate", nargs=1, type=float,
+        help="Optional parameter to override frames-to-timestamp conversion.")
+    parser.add_argument("-d",
+        dest="subtitle_delay", nargs=1, type=float,
+        help="Optional parameter to delay all subtitles by this many seconds.")
 
-    print("Generated by srtgen.py -- https://github.com/ojensen5115/srtgen")
-    print("Audio frame rate: {}/s".format(audio_frame_rate))
-    print("Subtitle offset:  {}s".format(subtitle_offset))
+    arguments = vars(parser.parse_args(args))
+    text_path = arguments['text_path'][0]
+    audio_path = arguments['audio_path'][0]
+    subtitle_offset = arguments['subtitle_delay']
+    audio_frame_rate = arguments['audio_frame_rate']
 
-    # get a list of sentences, and annotate them
-    sentences = get_sentences(script_path)
 
-    # get a list of recognized words, and their timestamps
+    sentences = get_sentences(text_path)
     segments = get_recognized_words(audio_path)
     segments = [s for s in segments if s[0] != '<sil>']
 
-    # align those two lists of words
-    sentences = align_segments(sentences, segments)
-
-    # output the sentences in SRT format
+    align_segments(sentences, segments)
     print_srt(sentences, segments, subtitle_offset, audio_frame_rate)
 
 
