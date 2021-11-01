@@ -222,11 +222,11 @@ def mark_sentence_frames(sentences):
 
 
 def get_delay_and_rate(sentences, segments):
-    eprint("At what timestamp does this sentence from the beginning of the audio begin? (HH:MM:SS:TT)")
+    eprint("At what timestamp does this sentence from the beginning of the audio begin? (HH:MM:SS.mmm)")
     eprint("    " + sentences[0]['text'])
     first_ts = input_ts_to_seconds(input())
 
-    eprint("At what timestamp does this sentence from the end of the audio begin? (HH:MM:SS:TT)")
+    eprint("At what timestamp does this sentence from the end of the audio begin? (HH:MM:SS.mmm)")
     eprint("    " + sentences[-1]['text'])
     last_ts = input_ts_to_seconds(input())
 
