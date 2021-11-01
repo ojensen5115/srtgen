@@ -14,10 +14,12 @@ from nltk.tokenize import RegexpTokenizer
 
 tokenizer = RegexpTokenizer("[\w']+")
 nltk.download('punkt', quiet=True)
+verbose = False
 
 
 def eprint(*args, **kwargs):
-    print(*args, file=sys.stderr, **kwargs)
+    if verbose or kwargs.get('force'):
+        print(*args, file=sys.stderr)
 
 def seconds_to_srt_ts(timestamp):
     if not timestamp:
@@ -55,7 +57,6 @@ def get_sentences(filename):
             text_segments.append(part.strip())
 
     sentences = []
-    script_words = []
     for sentence in text_segments:
         words = tokenizer.tokenize(sentence)
         lower_words = [x.lower() for x in words]
@@ -65,6 +66,14 @@ def get_sentences(filename):
             "segments": [],
         })
     return sentences
+
+
+def get_sentence_map(sentences):
+    sentence_map = []
+    for idx, sentence in enumerate(sentences):
+        for _ in sentence['words']:
+            sentence_map.append(idx)
+    return sentence_map
 
 
 def get_recognized_words(filename):
@@ -100,103 +109,64 @@ def align_segments(sentences, segments):
     matcher = difflib.SequenceMatcher(isjunk=None, a=script_words, b=audio_words, autojunk=False)
     blocks = matcher.get_matching_blocks()
 
+    # get a map of word idx -> sentence idx
+    sentence_map = get_sentence_map(sentences)
+
     # map segments to sentence words
     script_idx = 0
     block_idx = 0
     word_idx = 0
     sentence_idx = 0
-    sentence = sentences[sentence_idx]
+    last_block_script_idx = 0
+    last_block_segment_idx = 0
+
     for block in blocks:
         block_script_idx = block[0]
         block_segment_idx = block[1]
         block_length = block[2]
 
-        # catch up on non-matching area
-        if block_script_idx > script_idx:
-            for idx in range(script_idx, block_script_idx):
-                #eprint("Word '{}' in sentence {} not recognized, filling it in.".format(script_words[idx], sentence_idx + 1))
-                sentence['segments'].append([script_words[idx], None, None])
-                script_idx += 1
-                word_idx += 1
-                if word_idx >= len(sentence['words']):
-                    word_idx = 0
-                    sentence_idx += 1
-                    try:
-                        sentence = sentences[sentence_idx]
-                    except:
-                        pass
+        # catch up non-matching area
+        missing_script_words = block_script_idx - last_block_script_idx
+        missing_segment_words = block_segment_idx - last_block_segment_idx
+        # TODO: we're just front-loading the gaps here -- not ideal
+        eprint("Missing {} script words, {} segment words".format(missing_script_words, missing_segment_words))
+        for num in range(missing_script_words):
+            script_idx = last_block_script_idx + num
+            segment_idx = last_block_segment_idx + num
+            sentence = sentences[sentence_map[script_idx]]
+            word = script_words[script_idx].upper()
+
+            if num < missing_segment_words:
+                segment = segments[segment_idx]
+            else:
+                segment = None
+            eprint(" _: {} :: {} ({})".format(word, segment, segment_idx))
+            sentence['segments'].append((
+                word,
+                segment,
+                False
+                ))
+        for num in range(missing_segment_words - missing_script_words):
+            eprint("  X: skipping segment {}".format(segments[last_block_segment_idx + missing_script_words + num]))
 
         # apply the match
-        for idx in range(0, block_length):
-            sentence['segments'].append((script_words[block_script_idx + idx], segments[block_segment_idx + idx], block_segment_idx + idx))
-            script_idx += 1
-            word_idx += 1
-            if word_idx >= len(sentence['words']):
-                word_idx = 0
-                sentence_idx += 1
-                try:
-                    sentence = sentences[sentence_idx]
-                except:
-                    pass
+        for num in range(block_length):
+            script_idx = block_script_idx + num
+            segment_idx = block_segment_idx + num
+            sentence = sentences[sentence_map[script_idx]]
+            word = script_words[script_idx]
+            eprint(" M: {} :: {} ({})".format(word, segments[segment_idx], segment_idx))
+            sentence['segments'].append((
+                word,
+                segments[segment_idx],
+                segment_idx))
 
-    sentences = close_sentence_gaps(sentences, segments)
+        last_block_script_idx = block_script_idx + block_length
+        last_block_segment_idx = block_segment_idx + block_length
+
+    #sentences = close_sentence_gaps(sentences, segments)
     return sentences
 
-
-def close_sentence_gaps(sentences, segments):
-    # handle gaps
-    for idx, sentence in enumerate(sentences):
-        if idx == 0:
-            continue
-
-        last_sentence = sentences[idx - 1]
-        # how many gaps do we have at the end of the last sentence?
-        missing_end = 0
-        missing_start = 0
-        for segment in last_sentence['segments'][::-1]:
-            if segment[1] is not None:
-                last_claimed_segment = segment[2]
-                break
-            missing_end += 1
-
-        # how many gaps do we have at the start of this sentence?
-        for segment in sentence['segments']:
-            if segment[1] is not None:
-                first_claimed_segment = segment[2]
-                break
-            missing_start += 1
-
-        # fix it
-        unclaimed_segments = list(range(last_claimed_segment + 1, first_claimed_segment))
-        gap_size = missing_end + missing_start
-
-        if gap_size == 0:
-            continue
-
-        # determine ratio of segments to put on each side
-        distribution_ratio = missing_end / gap_size
-        #eprint("Gap after sentence {}, with {}% of the words allocated before the break".format(
-        #    idx, round(distribution_ratio * 100)))
-
-        if distribution_ratio == 0:
-            sentence['segments'][0][1] = segments[unclaimed_segments[0]]
-            sentence['segments'][0][2] = unclaimed_segments[0]
-        elif distribution_ratio == 1:
-            last_sentence['segments'][-1][1] = segments[unclaimed_segments[-1]]
-            last_sentence['segments'][-1][2] = unclaimed_segments[-1]
-        else:
-            last_sentence_segment = unclaimed_segments[round(distribution_ratio * len(unclaimed_segments))]
-            last_sentence['segments'][-1][1] = segments[last_sentence_segment]
-            last_sentence['segments'][-1][2] = last_sentence_segment
-            try:
-                first_sentence_segment = unclaimed_segments[last_sentence_segment + 1]
-                sentence['segments'][0][1] = segments[first_sentence_segment]
-                sentence['segments'][0][2] = first_sentence_segment
-            except:
-                # fails if the ratio is super close to 1
-                pass
-
-    return sentences
 
 def mark_sentence_frames(sentences):
     for sentence_idx, sentence in enumerate(sentences):
@@ -222,12 +192,12 @@ def mark_sentence_frames(sentences):
 
 
 def get_delay_and_rate(sentences, segments):
-    eprint("At what timestamp does this sentence from the beginning of the audio begin? (HH:MM:SS.mmm)")
-    eprint("    " + sentences[0]['text'])
+    eprint("At what timestamp does this sentence from the beginning of the audio begin? (HH:MM:SS.mmm)", force=True)
+    eprint("    " + sentences[0]['text'], force=True)
     first_ts = input_ts_to_seconds(input())
 
-    eprint("At what timestamp does this sentence from the end of the audio begin? (HH:MM:SS.mmm)")
-    eprint("    " + sentences[-1]['text'])
+    eprint("At what timestamp does this sentence from the end of the audio begin? (HH:MM:SS.mmm)", force=True)
+    eprint("    " + sentences[-1]['text'], force=True)
     last_ts = input_ts_to_seconds(input())
 
     interval_frames = sentences[-1]['start_frame'] - sentences[0]['start_frame']
@@ -271,6 +241,11 @@ def print_srt(sentences, segments, subtitle_delay, audio_frame_rate):
         print('')
 
 
+def pprint(sentence):
+    print(sentence['text'])
+    for segment in sentence['segments']:
+        print("    {}".format(segment))
+
 def main(args):
 
     parser = argparse.ArgumentParser(
@@ -287,17 +262,21 @@ def main(args):
     parser.add_argument("-f",
         dest="audio_frame_rate", nargs=1, type=float,
         help="Optional parameter to override frames-to-timestamp conversion.")
+    parser.add_argument("-v",
+        action="count", default=0,
+        help="Verbose mode")
 
     arguments = vars(parser.parse_args(args))
     text_path = arguments['text_path'][0]
     audio_path = arguments['audio_path'][0]
     subtitle_offset = arguments['subtitle_delay']
     audio_frame_rate = arguments['audio_frame_rate']
-
+    global verbose
+    verbose = arguments['v']
 
     sentences = get_sentences(text_path)
     segments = get_recognized_words(audio_path)
-    segments = [s for s in segments if s[0] != '<sil>']
+    segments = [s for s in segments if s[0] != '<sil>' and s[0] != '[NOISE]']
 
     align_segments(sentences, segments)
     mark_sentence_frames(sentences)
