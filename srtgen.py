@@ -88,7 +88,7 @@ def get_recognized_words(filename):
     except FileNotFoundError:
         # perform speech recognition
         r = speech_recognition.Recognizer()
-        with speech_recognition.WavFile(filename) as source:
+        with speech_recognition.WavFile(str(filename)) as source:
             audio_data = r.record(source)
         decoder = r.recognize_sphinx(audio_data, show_all=True)
         segments = [(seg.word.split('(')[0], seg.start_frame, seg.end_frame) for seg in decoder.seg()][1:]
