@@ -27,6 +27,8 @@ If you don't provide these parameters, the script will ask you for timestamps of
   * ""Buffalo buffalo Buffalo buffalo buffalo buffalo Buffalo buffalo"" begins at `2.16`
   * ""Buffalo bison that other Buffalo bison bully also bully Buffalo bison."" begins at `1:02.8`
 
+Note that some of the scripts have intentional mistakes / typos in them, to help test and demonstrate the program's resilience against deviations between the spoken text and what ends up being recognized by the speech recognition.
+
 ## Dependencies
 
 * `python` (obviously)
