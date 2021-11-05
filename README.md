@@ -19,7 +19,20 @@ python srtgen.py -t samples/2.txt -a samples/2.wav -d 1.4 -f 95 > samples/2.srt
 python srtgen.py -t samples/buffalo.txt -a samples/buffalo.wav -d 2 -f 95 > samples/buffalo.srt
 ```
 
-If you don't provide these parameters, the script will ask you for timestamps of two anchor points of sentences towards the beginning and end of the file, and calculates them itself.
+If you don't provide these parameters, the script will ask you for timestamps of two anchor points of sentences towards the beginning and end of the file, and calculates them itself. To save you having to dig through the sample audio for precise timestamps, the sample anchor sentence timestamps are as follows:
+
+* 1.wav:
+  * "Hello." begins at `1`
+  * "That would be really cool" begins at `8.92`
+* 2.wav:
+  * "Hello, and welcome to the security reviewer training." begins at `1.56`
+  * "It's very important, and you should pay attention." begins at `7.76`
+* 3.wav:
+  * "Hi." begins at `1.08`
+  * "And with a bit of data massaging, the Ratcliff-Obershelp algorithm seems to work well enough." begins at `1:11.68`
+* buffalo.wav:
+  * ""Buffalo buffalo Buffalo buffalo buffalo buffalo Buffalo buffalo"" begins at `2.16`
+  * ""Buffalo bison that other Buffalo bison bully also bully Buffalo bison."" begins at `1:02.8`
 
 ## Dependencies
 

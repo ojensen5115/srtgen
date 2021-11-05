@@ -216,14 +216,14 @@ def get_delay_and_rate(sentences, segments):
         start_sentence = sentences[0]
         end_sentence = sentences[-1]
 
-    eprint("When does this sentence start? Best guess: {}".format(
+    eprint("When does this sentence start? Approx guess: {}".format(
             seconds_to_srt_ts(
                 (start_sentence['start_frame'] / 100), use_point=True)),
         force=True)
     eprint("    " + start_sentence['text'], force=True)
     first_ts = input_ts_to_seconds(input())
 
-    eprint("When does this sentence start? Best guess: {}".format(
+    eprint("When does this sentence start? Approx guess: {}".format(
             seconds_to_srt_ts(
                 (end_sentence['start_frame'] / 100), use_point=True)),
         force=True)
