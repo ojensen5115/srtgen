@@ -26,4 +26,3 @@ If you don't provide these parameters, the script will ask you for timestamps of
 * `python` (obviously)
 * `swig` (for building `speech_recognition`)
 * the stuff in the Pipfile
-* you'll also need to pip install `six` and `numpy` because `annotate` doesn't declare its dependencies correctly
