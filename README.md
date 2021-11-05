@@ -7,19 +7,19 @@ If you have a video, you'll need to extract the audio track into a `wav` file fi
 ## Usage
 
 ```
-python srtgen.py input.txt input.wav > output.srt
+python srtgen.py -t input.txt -a input.wav > output.srt
 ```
 
-For some reason that I haven't been able to figure out yet, sometimes the subtitles are all too early by some amount of time. To account for this, you can supply an optional third parameter which is interpreted as an offset (in seconds) by which to delay each subtitle:
-
-Also for some other reason that I haven't been able to figure out yet, sometimes the subtitles experience time at a different rate than us humans. To account for this, you can supply an optional fourth parameter which is interpreted as a frame rate (in frames per second). The default frame rate is 100 frames per second, which seems okay most of the time.
+For some reason that I haven't been able to figure out yet, sometimes the subtitles are all too early by some amount of time. To account for this, you can supply an optional third parameter which is interpreted as an offset (in seconds) by which to delay each subtitle. Also for some other reason that I haven't been able to figure out yet, sometimes the subtitles experience time at a different rate than us humans. To account for this, you can supply an optional fourth parameter which is interpreted as a frame rate (in frames per second). The default frame rate is 100 frames per second, which seems okay most of the time.
 
 Some examples (on the sample files):
 ```
-python srtgen.py samples/1.txt samples/1.wav 0 93 > samples/1.srt
-python srtgen.py samples/2.txt samples/2.wav 1.4 95 > samples/2.srt
-python srtgen.py samples/buffalo.txt samples/buffalo.wav 2 95 > samples/buffalo.srt
+python srtgen.py -t samples/1.txt -a samples/1.wav -d 0 -f 93 > samples/1.srt
+python srtgen.py -t samples/2.txt -a samples/2.wav -d 1.4 -f 95 > samples/2.srt
+python srtgen.py -t samples/buffalo.txt -a samples/buffalo.wav -d 2 -f 95 > samples/buffalo.srt
 ```
+
+If you don't provide these parameters, the script will ask you for timestamps of two anchor points of sentences towards the beginning and end of the file, and calculates them itself.
 
 ## Dependencies
 

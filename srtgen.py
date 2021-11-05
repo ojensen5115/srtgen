@@ -21,7 +21,7 @@ def eprint(*args, **kwargs):
     if verbose or kwargs.get('force'):
         print(*args, file=sys.stderr)
 
-def seconds_to_srt_ts(timestamp):
+def seconds_to_srt_ts(timestamp, use_point=False):
     if not timestamp:
         return "???"
     seconds = int(timestamp)
@@ -30,7 +30,11 @@ def seconds_to_srt_ts(timestamp):
     seconds = seconds % 60
     hours = mins // 60
     mins = mins % 60
-    return "{:02d}:{:02d}:{:02d},{:03d}".format(hours, mins, seconds, milliseconds)
+
+    if use_point:
+        return "{:02d}:{:02d}:{:02d}.{:03d}".format(hours, mins, seconds, milliseconds)
+    else:
+        return "{:02d}:{:02d}:{:02d},{:03d}".format(hours, mins, seconds, milliseconds)
 
 def input_ts_to_seconds(input_ts):
     # format: HH:MM:SS.mmm
@@ -144,7 +148,7 @@ def align_segments(sentences, segments):
             sentence['segments'].append((
                 word,
                 segment,
-                False
+                None # only set of "actually" recognized segments
                 ))
         for num in range(missing_segment_words - missing_script_words):
             eprint("  X: skipping segment {}".format(segments[last_block_segment_idx + missing_script_words + num]))
@@ -184,23 +188,49 @@ def mark_sentence_frames(sentences):
                 sentence['end_frame'] = segment[1][2]
                 early_end = idx
                 break
+        if late_start or early_end:
+            eprint("{}: '{}'".format(sentence_idx + 1, sentence['text']))
         if late_start:
-            eprint("Sentence {} has a late start of {} words".format(sentence_idx + 1, late_start))
+            eprint("  Late start: {}".format(late_start))
         if early_end:
-            eprint("Sentence {} has an early end of {} words".format(sentence_idx + 1, early_end))
+            eprint("  Early end: {}".format(early_end))
     return sentences
 
 
 def get_delay_and_rate(sentences, segments):
-    eprint("At what timestamp does this sentence from the beginning of the audio begin? (HH:MM:SS.mmm)", force=True)
-    eprint("    " + sentences[0]['text'], force=True)
+
+    for sentence in sentences:
+        if sentence['segments'][0][2] is not None:
+            break
+        eprint("Calibration start sentence segment rejected: {}".format(sentence['segments']))
+    start_sentence = sentence
+
+    for sentence in sentences[::-1]:
+        if sentence['segments'][0][2] is not None:
+            break
+        eprint("Calibration end sentence segment rejected: {}".format(sentence['segments']))
+    end_sentence = sentence
+
+    if start_sentence['start_frame'] > end_sentence['end_frame']:
+        eprint("WARNING: Could not find clean start/end calibration sentences, falling back to first and last")
+        start_sentence = sentences[0]
+        end_sentence = sentences[-1]
+
+    eprint("When does this sentence start? Best guess: {}".format(
+            seconds_to_srt_ts(
+                (start_sentence['start_frame'] / 100), use_point=True)),
+        force=True)
+    eprint("    " + start_sentence['text'], force=True)
     first_ts = input_ts_to_seconds(input())
 
-    eprint("At what timestamp does this sentence from the end of the audio begin? (HH:MM:SS.mmm)", force=True)
-    eprint("    " + sentences[-1]['text'], force=True)
+    eprint("When does this sentence start? Best guess: {}".format(
+            seconds_to_srt_ts(
+                (end_sentence['start_frame'] / 100), use_point=True)),
+        force=True)
+    eprint("    " + end_sentence['text'], force=True)
     last_ts = input_ts_to_seconds(input())
 
-    interval_frames = sentences[-1]['start_frame'] - sentences[0]['start_frame']
+    interval_frames = end_sentence['start_frame'] - start_sentence['start_frame']
     interval_seconds = last_ts - first_ts
     frame_rate = interval_frames / interval_seconds
 
